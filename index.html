@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Billing App</title>
+<style>
+body { font-family: Arial, sans-serif; margin:20px; background:#f4f6f8; }
+h2,h3 { color:#333; }
+input, button { padding:7px; margin:5px 0; border-radius:5px; border:1px solid #ccc; }
+input:invalid { border-color:red; }
+input[type=number] { width:150px; }
+.item-container { display:grid; grid-template-columns: repeat(auto-fill,minmax(300px,1fr)); gap:15px; max-height:400px; overflow-y:scroll; padding:10px; border:1px solid #ccc; background:#fff; border-radius:8px; }
+.item-card { border:1px solid #ddd; padding:10px; border-radius:8px; background:#fff; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 5px rgba(0,0,0,0.1); }
+.item-card div { display:flex; flex-direction:column; }
+button { background-color:#4CAF50; color:white; border:none; cursor:pointer; border-radius:5px; padding:6px 12px; }
+button:hover { background-color:#45a049; }
+table { border-collapse: collapse; width:95%; margin-top:20px; background:#fff; border-radius:8px; overflow:hidden; }
+th, td { border:1px solid #ccc; padding:10px; text-align:center; }
+th { background-color:#f0f0f0; }
+#cartTotal { font-weight:bold; margin-top:10px; font-size:1.2em; }
+.container { max-width:1200px; margin:auto; }
+#billResult { margin-top:20px; background:#fff; padding:15px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.1); }
+.button-container { margin-top:15px; }
+label { font-weight:bold; margin-right:5px; }
+input[type=email], input[type=text], input[type=number] { width:250px; }
+</style>
+</head>
+<body>
+<div class="container">
+<h2>Billing App</h2>
+<div>
+<label>Customer Name:</label>
+<input type="text" id="customerName" placeholder="Enter Name" required>
+<label>Number:</label>
+<input type="number" id="customerNumber" placeholder="10-digit Number" required min="1000000000" max="9999999999">
+<label>Email:</label>
+<input type="email" id="customerEmail" placeholder="Enter Email" required>
+</div>
+
+<h3>Catalog</h3>
+<div class="item-container" id="itemContainer"></div>
+
+<h3>Bill / Cart</h3>
+<table id="cartTable">
+<tr>
+<th>Item Name</th><th>Quantity</th><th>Price</th><th>Total</th><th>Remove</th>
+</tr>
+</table>
+<div id="cartTotal">Total: ₹0</div>
+
+<div class="button-container">
+<button onclick="generateBill()">Generate Bill</button>
+<button onclick="submitData()">Submit & Generate Invoice</button>
+</div>
+<div id="billResult"></div>
+</div>
+
+<script>
+const SECRET_KEY = "YOUR_SECRET_KEY"; // same as backend
+let cart=[], catalog=[];
+
+// Fetch catalog from Apps Script
+async function fetchCatalog(){
+  const url = "YOUR_WEB_APP_URL?action=getCatalog&key="+SECRET_KEY;
+  const res = await fetch(url);
+  const data = await res.json();
+  if(data.error) alert(data.error);
+  else { catalog = data; renderCatalog(); }
+}
+fetchCatalog();
+
+// Render catalog
+function renderCatalog(){
+  const container = document.getElementById("itemContainer");
+  container.innerHTML="";
+  catalog.forEach(item=>{
+    const safeID = item.name.replace(/[^a-zA-Z0-9]/g,'_');
+    const div = document.createElement("div");
+    div.className="item-card";
+    div.innerHTML = `
+      <div><strong>${item.name}</strong><span>Price: ₹${item.price}</span></div>
+      <div>Qty: <input type="number" min="0" value="0" id="qty_${safeID}">
+      <button onclick="addToCart('${safeID}','${item.name}',${item.price})">Add</button></div>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function addToCart(safeID,name,price){
+  const qty=parseInt(document.getElementById("qty_"+safeID).value);
+  if(qty<=0){ alert("Enter valid quantity"); return; }
+  cart.push({name, qty, price});
+  document.getElementById("qty_"+safeID).value=0;
+  renderCart();
+}
+
+function renderCart(){
+  const table=document.getElementById("cartTable");
+  table.innerHTML=`<tr><th>Item Name</th><th>Quantity</th><th>Price</th><th>Total</th><th>Remove</th></tr>`;
+  let total=0;
+  cart.forEach((item,index)=>{
+    const row=table.insertRow();
+    row.insertCell(0).innerText=item.name;
+    row.insertCell(1).innerText=item.qty;
+    row.insertCell(2).innerText=item.price;
+    row.insertCell(3).innerText=item.qty*item.price;
+    const removeBtn=document.createElement("button");
+    removeBtn.innerText="Remove";
+    removeBtn.onclick=()=>{cart.splice(index,1); renderCart();};
+    row.insertCell(4).appendChild(removeBtn);
+    total+=item.qty*item.price;
+  });
+  document.getElementById("cartTotal").innerText="Total: ₹"+total;
+}
+
+// Generate bill preview
+function generateBill(){
+  if(cart.length===0){ alert("Cart empty"); return; }
+  const name=document.getElementById("customerName").value.trim();
+  const number=document.getElementById("customerNumber").value.trim();
+  const email=document.getElementById("customerEmail").value.trim();
+  if(!name||!number||!email){ alert("Enter all details"); return; }
+  if(number.length!==10){ alert("Enter 10-digit number"); return; }
+  displayInvoice(name,number,email,cart,"Preview Invoice");
+}
+
+function displayInvoice(name,number,email,items,title="Invoice"){
+  let billText=`<h3>${title}</h3>`;
+  const invoiceID="INV-"+new Date().getTime();
+  const date=new Date().toLocaleString();
+  billText+=`<h4>Invoice ID: ${invoiceID}</h4><h4>Date: ${date}</h4>`;
+  billText+=`<h4>Customer: ${name} | Contact: ${number} | Email: ${email}</h4>`;
+  billText+=`<table border="1" style="border-collapse:collapse;width:100%;"><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr>`;
+  let total=0;
+  items.forEach(item=>{
+    const itemTotal=item.qty*item.price;
+    billText+=`<tr><td>${item.name}</td><td>${item.qty}</td><td>₹${item.price}</td><td>₹${itemTotal}</td></tr>`;
+    total+=itemTotal;
+  });
+  billText+=`<tr><td colspan="3"><strong>Total</strong></td><td>₹${total}</td></tr></table>`;
+  document.getElementById("billResult").innerHTML=billText;
+}
+
+// Submit invoice to Apps Script
+async function submitData(){
+  if(cart.length===0){ alert("Cart empty"); return; }
+  const customer={
+    name:document.getElementById("customerName").value.trim(),
+    number:document.getElementById("customerNumber").value.trim(),
+    email:document.getElementById("customerEmail").value.trim()
+  };
+  if(!customer.name||!customer.number||!customer.email){ alert("Enter all details"); return; }
+  if(customer.number.length!==10){ alert("Enter 10-digit number"); return; }
+
+  const payload={action:"saveInvoice",key:SECRET_KEY,payload:JSON.stringify({customer,cart})};
+  const url="YOUR_WEB_APP_URL";
+  const res=await fetch(url,{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  });
+  const data=await res.json();
+  if(data.error){ alert(data.error); return; }
+  alert("Invoice submitted & database updated!");
+  displayInvoice(data.customer.name,data.customer.number,data.customer.email,data.cart,"Invoice "+data.invoiceID);
+}
+</script>
+</body>
+</html>
